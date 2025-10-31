@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Template CloudFormation Portátil para criar um Application Load Balancer (ALB)
+  e um Auto Scaling Group (ASG) com um Web Server Apache.
+
+# =================================================================
+# Parâmetros
+# =================================================================
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Um nome para o projeto (usado em Tags e Nomes de recursos).
+    Default: Lab-ALB-ASG
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: O ID da VPC onde os recursos serão criados (Ex: vpc-xxxxxxxx).
+
+  PublicSubnetIds:
+    Type: CommaDelimitedList
+    Description: IDs de pelo menos duas subnets públicas (separadas por vírgula).
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Description: O AMI ID mais recente do Amazon Linux 2 (SSM Parameter Store).
+    Default: /aws/service/ami-amazon-linux-2/latest/amzn2-ami-hvm-x86_64-gp2
+
+# =================================================================
+# Recursos
+# =================================================================
+Resources:
+  # ----------------------------------------------------------------
+  # 1. Security Groups
+  # ----------------------------------------------------------------
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SG para o Application Load Balancer. Permite HTTP/HTTPS.
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub "ALB-SG-${ProjectName}"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SG para as instâncias EC2. Permite HTTP/HTTPS do ALB e SSH.
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub "ASG-SG-${ProjectName}"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  # ----------------------------------------------------------------
+  # 2. Launch Template
+  # ----------------------------------------------------------------
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "LT-${ProjectName}"
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId # Usa a AMI dinâmica
+        InstanceType: t2.micro
+        KeyName: !Ref "AWS::NoValue"
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            yum update -y
+            yum install -y httpd
+            systemctl start httpd
+            systemctl enable httpd
+            echo "<h1>Servidor Web - Instância: $(hostname -f)</h1>" > /var/www/html/index.html
+
+  # ----------------------------------------------------------------
+  # 3. Application Load Balancer e Target Group
+  # ----------------------------------------------------------------
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "ALB-${ProjectName}"
+      Scheme: internet-facing
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  # ----------------------------------------------------------------
+  # 4. Auto Scaling Group
+  # ----------------------------------------------------------------
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "ASG-${ProjectName}"
+      VPCZoneIdentifier: !Ref PublicSubnetIds
+      MinSize: '2'
+      MaxSize: '2'
+      DesiredCapacity: '2'
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      HealthCheckType: ELB 
+      HealthCheckGracePeriod: 300
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.DefaultVersionNumber
+      Tags: 
+        - Key: Name
+          Value: !Sub "WebServer-${ProjectName}"
+          PropagateAtLaunch: 'true'
+        - Key: Project
+          Value: !Ref ProjectName
+          PropagateAtLaunch: 'true'
+
+# =================================================================
+# Saídas
+# =================================================================
+Outputs:
+  LoadBalancerDNSName:
+    Description: DNS Name do Application Load Balancer.
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-WebSiteURL"

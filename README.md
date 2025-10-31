@@ -25,7 +25,7 @@ Em vez de um único servidor, a infraestrutura distribui a carga de tráfego ent
 
 **Alta Disponibilidade:** O **Application Load Balancer (ALB)** atua como o ponto de entrada único e distribui o tráfego de forma inteligente entre as instâncias saudáveis.
 * Se uma instância falhar, o ALB para de enviar tráfego para ela, e os usuários não percebem a falha.
-**Resiliência e Elasticidade:** O **Auto Scaling Group (ASG)** garante que um número mínimo (neste caso, 2) de instâncias esteja sempre em execução[cite: 6]. [cite_start]Ele monitora a saúde das instâncias e, se uma falhar, o ASG a encerra automaticamente e lança uma nova para substituí-la, garantindo a auto-recuperação do ambiente.
+**Resiliência e Elasticidade:** O **Auto Scaling Group (ASG)** garante que um número mínimo (neste caso, 2) de instâncias esteja sempre em execução. Ele monitora a saúde das instâncias e, se uma falhar, o ASG a encerra automaticamente e lança uma nova para substituí-la, garantindo a auto-recuperação do ambiente.
 
 ---
 
@@ -107,10 +107,10 @@ Antes de implantar, você precisa ter:
 
 ### 3. Limpeza (Cleanup)
 
-[cite_start]Para evitar cobranças, é crucial excluir todos os recursos criados.
+Para evitar cobranças, é crucial excluir todos os recursos criados.
 
 1.  Vá para o console do **CloudFormation**.
 2.  Selecione a pilha que você criou.
 3.  Clique em **"Excluir" (Delete)**.
 
-[cite_start]O CloudFormation irá encerrar e excluir automaticamente todos os recursos criados na ordem correta (ASG, ALB, Instâncias, Security Groups, etc.).
+O CloudFormation irá encerrar e excluir automaticamente todos os recursos criados na ordem correta (ASG, ALB, Instâncias, Security Groups, etc.).
